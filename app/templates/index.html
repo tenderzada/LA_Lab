@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper KB - tianjiang's research library</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.18 7.5 12 10.82 4.82 7.5 12 4.18zM4 8.82l7 3.5v7.36l-7-3.5V8.82zm9 10.86v-7.36l7-3.5v7.36l-7 3.5z"/>
+          </svg>
+          <h1>Paper KB</h1>
+        </div>
+        <div class="sidebar-subtitle">tianjiang's research library</div>
+      </div>
+
+      <div class="sidebar-stats">
+        <div class="stat">
+          <div class="stat-value" id="statTotal">-</div>
+          <div class="stat-label">Papers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="statSources">-</div>
+          <div class="stat-label">Sources</div>
+        </div>
+      </div>
+
+      <div class="nav-section-title">Date Navigator</div>
+      <div id="dateNav">
+        <div class="loading">
+          <div class="loading-spinner"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="topbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Search by title, keywords, or topic...">
+        </div>
+        <button class="btn" onclick="rescan()">Rescan</button>
+      </div>
+
+      <div id="filterLabel" class="filter-label">Showing <strong>all papers</strong></div>
+      <div id="sourceFilters" class="source-filters"></div>
+
+      <div class="category-section-title">Research Topics</div>
+      <div id="categoryFilters" class="category-filters"></div>
+
+      <div id="loadingState" class="loading" style="display:none;">
+        <div class="loading-spinner"></div>
+        <p>Loading papers...</p>
+      </div>
+
+      <div class="paper-list" id="paperList">
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <p>Loading papers...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Paper</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

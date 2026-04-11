@@ -1,0 +1,22 @@
+# Paper data (keep local only)
+/*.md
+!README.md
+/*.pdf
+/*.png
+/*.jpg
+/*.jpeg
+/*.html
+/*.json
+
+# Paper subdirectories
+figures/
+pdf/
+TMC_*/
+2*_*/
+
+# Python
+__pycache__/
+*.pyc
+
+# App generated data
+app/papers.json
