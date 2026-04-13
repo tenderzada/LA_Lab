@@ -106,7 +106,8 @@ def scan():
         full_path = os.path.join(BASE_DIR, entry)
 
         # Skip app directory and special files
-        if entry in ("app", "figures", "pdf", "build_card.py", "extract_figure.py"):
+        if entry in ("app", "figures", "pdf", "build_card.py", "extract_figure.py",
+                      ".git", ".gitignore", ".claude", "README.md"):
             continue
 
         md_path = None
@@ -146,6 +147,12 @@ def scan():
         date = infer_date(entry_name, md_path)
         source = infer_source(entry_name)
 
+        # Get file modification time (used for "recently added" sort)
+        try:
+            mtime = os.path.getmtime(md_path)
+        except Exception:
+            mtime = 0
+
         # Build paper entry
         paper = {
             "id": entry_name.replace(".md", ""),
@@ -156,19 +163,14 @@ def scan():
             "arxiv_id": fields.get("arxiv_id", ""),
             "source": source,
             "date": date,
+            "mtime": mtime,
             "path": os.path.relpath(md_path, BASE_DIR).replace("\\", "/"),
             "abs_path": md_path.replace("\\", "/"),
         }
         papers.append(paper)
 
-    # Sort by date descending
-    def sort_key(p):
-        d = p["date"]
-        if d == "Unknown":
-            return ""
-        return d
-
-    papers.sort(key=sort_key, reverse=True)
+    # Sort by file modification time descending (most recently added/modified first)
+    papers.sort(key=lambda p: p.get("mtime", 0), reverse=True)
 
     with open(OUTPUT, "w", encoding="utf-8") as f:
         json.dump(papers, f, ensure_ascii=False, indent=2)

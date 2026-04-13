@@ -20,3 +20,11 @@ __pycache__/
 
 # App generated data
 app/papers.json
+app/annotations.json
+app/rag_index/
+app/chroma_db/
+
+# Environment
+.env
+app/.env.local
+app/.env
