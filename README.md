@@ -1,9 +1,9 @@
-# 📚 Paper KB · 个人论文知识库
+# 📚 Paper KB · 低空新青年
 
 一个轻量级的本地 AI 论文知识管理 Web 应用。基于 Flask + FAISS + LLM，
-为学术研究者提供**浏览、搜索、RAG 对话**三合一的私有知识库。
+为学术研究者提供**浏览、搜索、RAG 对话、深度调研**四合一的私有知识库。
 
-![Status](https://img.shields.io/badge/status-active-success)
+![Version](https://img.shields.io/badge/version-3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -24,6 +24,18 @@
 - **Qwen-Plus** 生成带引用的中文回答
 - **多轮对话** 支持追问，对话历史自动传递上下文
 - **引用可点击** 直接查看原文片段
+
+### 🔬 Deep Research（v3.0 新增）
+基于 OpenResearcher 思路，实现**多轮 ReAct 深度调研**：
+- **自主推理循环**：LLM 像研究者一样反复"思考 → 检索 → 阅读 → 反思"
+- **实时推理轨迹**：前端通过 SSE 流式展示每一步思考（💭）、工具调用（🔧）、观察结果（👁）
+- **4 种调研工具**：
+  - `search_kb` — 语义检索本地知识库
+  - `read_paper` — 深入阅读某篇论文全文
+  - `search_arxiv` — 可选，检索 arXiv 论文（拓展视野）
+  - `web_search` — 可选，通过 Serper 搜索公网（需额外配置）
+- **可调参数**：最大轮数 1-16（默认 4），arXiv / Web 可独立开关
+- **结构化报告**：按子问题分组、带论文引用、附研究空白分析
 
 ### 🏷️ 个人标注系统
 - **⭐ 星标** 标记重要论文
@@ -86,17 +98,20 @@ pip install flask openai faiss-cpu numpy PyMuPDF
 | 用途 | 服务 | 环境变量 |
 |------|------|---------|
 | Embedding | OpenAI / OpenRouter | `OPENAI_API_KEY` |
-| 对话 & 摘要 | Qwen (DashScope) | `DASHSCOPE_API_KEY` |
+| 对话 & 摘要 & Deep Research | Qwen (DashScope) | `DASHSCOPE_API_KEY` |
 | 飞书推送（可选） | Feishu Webhook | `FEISHU_WEBHOOK` |
+| Web 搜索（可选） | Serper | `SERPER_API_KEY` |
 
-**设置方式（Windows PowerShell）**：
-```powershell
-$env:OPENAI_API_KEY = "sk-..."
-$env:DASHSCOPE_API_KEY = "sk-..."
-$env:FEISHU_WEBHOOK = "https://open.feishu.cn/..."  # 可选
+**推荐方式**：在 `app/` 目录下创建 `.env.local` 文件（已在 `.gitignore` 中排除）：
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+DASHSCOPE_API_KEY=sk-...
+FEISHU_WEBHOOK=https://open.feishu.cn/...    # 可选
+SERPER_API_KEY=...                            # 可选，Deep Research Web 搜索用
 ```
 
-**设置方式（Bash / Zsh）**：
+**或通过环境变量（Bash / Zsh）**：
 ```bash
 export OPENAI_API_KEY="sk-..."
 export DASHSCOPE_API_KEY="sk-..."
@@ -106,6 +121,7 @@ export DASHSCOPE_API_KEY="sk-..."
 > - OpenAI: https://platform.openai.com/api-keys
 > - OpenRouter（OpenAI 兼容，支持多模型）: https://openrouter.ai/
 > - Qwen / DashScope: https://dashscope.console.aliyun.com/
+> - Serper（Google 搜索 API）: https://serper.dev/
 
 ### 3. 准备论文数据
 
@@ -157,38 +173,38 @@ python server.py
 
 1. 点击右下角的 💬 对话气泡打开对话面板
 2. 点击 **Build Index** 按钮（首次需等 1-3 分钟，取决于论文数量）
-3. 构建完成后即可开始提问
+3. 构建完成后即可开始提问和使用 Deep Research
 
 ---
 
 ## 📋 界面说明
 
 ```
-┌──────────────────┬──────────────────────────────────────────────┐
-│   Sidebar        │  Top Bar (Search + Import + Digest + Rescan) │
-│                  ├──────────────────────────────────────────────┤
-│  📚 Paper KB     │  [All] [arXiv] [TMC] ...         ← 来源过滤 │
-│                  │  [All] [⭐ Starred] [📌 To Read] ← 状态过滤 │
-│  📊 Stats        │                                              │
-│  228 / 4         │  Research Topics:                            │
-│                  │  [🔄 自进化] [🎮 智能体RL] [🔧 工具智能体]  │
-│  📅 Date Nav     │  [🛩️ 低空经济] ...            ← 领域过滤   │
-│  ▼ 2026  (180)   │                                              │
-│    4月    15     │  ┌──────────────────────────────────┐        │
-│    3月    43     │  │  1. 论文标题 ☆ [状态]           │        │
-│    2月    62     │  │     English Title                │        │
-│    1月    55     │  │     一句话介绍                   │        │
-│  ▼ 2025   (48)   │  │     [arXiv] [2026-04] [标签]     │        │
-│    12月    9     │  │                   ✨ Similar ↗   │        │
-│    ...           │  └──────────────────────────────────┘        │
-│                  │  ...                                         │
-│                  │                                         💬   │
-└──────────────────┴──────────────────────────────────────────────┘
+┌──────────────────┬──────────────────────────────────────────────────────────┐
+│   Sidebar        │  Top Bar (Search + arXiv + Deep Research + Digest + ...)│
+│                  ├──────────────────────────────────────────────────────────┤
+│  📚 Paper KB     │  [All] [arXiv] [TMC] ...                   ← 来源过滤  │
+│  低空新青年      │  [All] [⭐ Starred] [📌 To Read]           ← 状态过滤  │
+│                  │                                                          │
+│  📊 Stats        │  Research Topics:                                        │
+│  228 / 4         │  [🔄 自进化] [🎮 智能体RL] [🛩️ 低空经济]  ← 领域过滤 │
+│                  │                                                          │
+│  📅 Date Nav     │  ┌──────────────────────────────────────┐               │
+│  ▼ 2026  (180)   │  │  1. 论文标题 ☆ [状态]               │               │
+│    4月    15     │  │     English Title                    │               │
+│    3月    43     │  │     一句话介绍                       │               │
+│    2月    62     │  │     [arXiv] [2026-04] [标签]         │               │
+│    1月    55     │  │                       ✨ Similar ↗   │               │
+│  ▼ 2025   (48)   │  └──────────────────────────────────────┘               │
+│    12月    9     │  ...                                                     │
+│    ...           │                                                    💬   │
+└──────────────────┴──────────────────────────────────────────────────────────┘
 ```
 
 ### 顶部操作
 - **Search** — 全文搜索（快捷键 `Ctrl+K` 或 `/`）
 - **+ arXiv** — 从 arXiv ID/URL 一键导入新论文
+- **🔬 Deep Research** — 打开深度调研面板，多轮 ReAct 推理生成研究报告
 - **📰 Digest** — 查看本周研究简报
 - **Rescan** — 重新扫描论文目录（新增 `.md` 后点这个）
 
@@ -205,6 +221,13 @@ python server.py
 - 回答下方显示引用来源，可点击查看原文
 - 索引状态显示（`● Index ready (N chunks)`）
 
+### Deep Research 面板
+1. 点击顶栏 **🔬 Deep Research**
+2. 输入研究问题（如"综述近期低空经济中信道估计的主流方法与对比"）
+3. 调整最大轮数（默认 4），按需开启 arXiv / Web 搜索
+4. 点击 **开始调研** → 实时观看推理轨迹
+5. 调研完成后查看结构化研究报告
+
 ---
 
 ## 🏗️ 项目结构
@@ -215,6 +238,7 @@ Paper_Intro/
 │   ├── server.py           # Flask 服务器（端口 5100）
 │   ├── scan.py             # 扫描器：生成 papers.json
 │   ├── rag.py              # RAG 核心：索引构建 + 检索 + 问答
+│   ├── researcher.py       # Deep Research：ReAct 循环 + 工具调用（v3.0）
 │   ├── annotations.py      # 个人标注持久化
 │   ├── arxiv_import.py     # arXiv 自动抓取
 │   ├── weekly_digest.py    # 每周简报生成
@@ -223,6 +247,7 @@ Paper_Intro/
 │   ├── static/
 │   │   ├── style.css       # Claude 风格设计系统
 │   │   └── app.js          # 前端逻辑
+│   ├── .env.local          # API 密钥（需自建，已 gitignore）
 │   ├── papers.json         # 论文元数据（自动生成）
 │   ├── annotations.json    # 个人标注（自动生成）
 │   └── rag_index/          # FAISS 索引持久化
@@ -234,9 +259,49 @@ Paper_Intro/
 │   ├── intro.md
 │   └── paper.pdf                # PDF 可选
 ├── ...
+├── .env.example                  # API 密钥模板
 ├── README.md
 └── .gitignore
 ```
+
+---
+
+## 📐 技术架构
+
+```
+                    ┌──────────────┐
+                    │  Browser UI  │
+                    └──────┬───────┘
+                           │ HTTP / SSE
+                    ┌──────▼───────┐
+                    │  Flask 5100  │
+                    └──┬───┬───┬───┘
+            ┌──────────┤   │   ├──────────┐
+            ▼          ▼   │   ▼          ▼
+        scan.py    rag.py  │ researcher.py  weekly_digest.py
+                     │     │     │
+                     ▼     │     ▼ ReAct Loop
+                   FAISS   │  search_kb ──► rag.retrieve()
+                   Index   │  read_paper ─► papers.json
+                           │  search_arxiv► arXiv API
+                           │  web_search ─► Serper API
+                           ▼
+                    ┌──────────────┐     ┌───────────────┐
+                    │  OpenRouter  │     │  DashScope    │
+                    │  Embedding   │     │  Qwen-Plus    │
+                    └──────────────┘     └───────────────┘
+```
+
+---
+
+## 🔄 版本历史
+
+| 版本 | 主要功能 |
+|------|---------|
+| v1.0 | 论文浏览、日期导航、来源过滤、Claude 风格 UI |
+| v2.0 | RAG 对话（FAISS + Qwen-Plus）、语义检索 |
+| v2.1 | 多轮对话、相似论文、个人标注、arXiv 导入、键盘快捷键、飞书推送 |
+| **v3.0** | **Deep Research — ReAct 多轮深度调研、实时推理轨迹、结构化报告** |
 
 ---
 
@@ -255,6 +320,14 @@ Paper_Intro/
 3. 等待 30-60 秒自动下载 + 生成介绍
 4. 对话面板点 **Build Index** 加入索引
 
+### 深度调研某个方向
+
+1. 点击 **🔬 Deep Research**
+2. 输入问题（如"低空经济中 UAV 信道建模方法综述"）
+3. 调整轮数（研究越深入可增大，最多 16 轮）
+4. 按需勾选 arXiv 搜索（扩展视野）
+5. 查看推理过程，最终获得带引用的研究报告
+
 ### 让 LLM 回答更精准
 
 - **多轮追问**：对答案不满意时直接追问 "能更具体展开这个方法吗？"
@@ -265,7 +338,6 @@ Paper_Intro/
 
 所有数据都是纯文本 / JSON，可以直接备份：
 ```bash
-# 备份论文数据（所有 .md 文件）
 # 备份标注
 cp app/annotations.json backup/
 
@@ -282,6 +354,7 @@ cp -r app/rag_index backup/
 3. **增量索引** — 新论文只需重建 FAISS 索引，不影响现有数据
 4. **三段式结构** — 强制论文介绍遵循"动机 / 方法 / 实验"格式，方便检索和对比
 5. **视觉简洁** — 克制的配色和留白，减少阅读疲劳
+6. **透明推理** — Deep Research 完整展示 LLM 的调研过程，可审查、可理解
 
 ---
 
@@ -291,11 +364,11 @@ cp -r app/rag_index backup/
 
 - [ ] 按章节智能分块（动机/方法/实验独立切块）
 - [ ] Reranker 重排序提升 RAG 精度
-- [ ] 流式输出（Server-Sent Events）
 - [ ] 按研究领域限定对话范围
 - [ ] 引用高亮原文段落
 - [ ] 暗色模式切换
 - [ ] Docker Compose 一键部署
+- [ ] Deep Research 历史记录保存
 
 ---
 
@@ -305,6 +378,7 @@ MIT License — 自由使用和修改。
 
 ## 🙏 致谢
 
+- **OpenResearcher** (TIGER-AI-Lab) — Deep Research 灵感来源
 - **Claude.ai** — 视觉设计灵感
 - **FAISS** — Facebook AI 高效向量检索
 - **Qwen** — 阿里通义千问大模型
@@ -312,4 +386,4 @@ MIT License — 自由使用和修改。
 
 ---
 
-> Built with ☕ by tianjiang · Powered by Claude Code
+> Built with ☕ by tianjiang · 低空新青年 · Powered by Claude Code
