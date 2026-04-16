@@ -19,9 +19,10 @@ if os.path.exists(_env_local):
             _k, _v = _line.split("=", 1)
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 from scan import scan
 from rag import build_index, ask, get_index_info, find_similar
+import researcher
 from annotations import load_annotations, update_annotation
 from arxiv_import import import_arxiv
 from weekly_digest import build_digest, push_to_feishu
@@ -186,6 +187,37 @@ def rag_ask():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@app.route("/api/research", methods=["GET"])
+def api_research():
+    """Deep Research: ReAct loop streaming via SSE."""
+    question = (request.args.get("q") or "").strip()
+    if not question:
+        return jsonify({"error": "missing q"}), 400
+    max_rounds = int(request.args.get("rounds", 4))
+    enable_arxiv = request.args.get("arxiv", "0") == "1"
+    enable_web = request.args.get("web", "0") == "1"
+
+    def gen():
+        try:
+            for ev in researcher.run(
+                question,
+                max_rounds=max_rounds,
+                enable_arxiv=enable_arxiv,
+                enable_web=enable_web,
+            ):
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            err = {"type": "error", "message": f"{e}", "trace": traceback.format_exc()}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+        yield "data: {\"type\": \"done\"}\n\n"
+
+    return Response(
+        stream_with_context(gen()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":

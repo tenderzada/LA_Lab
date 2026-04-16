@@ -1092,3 +1092,123 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
+
+// ── Deep Research (OpenResearcher-style ReAct) ──
+let _researchES = null;
+
+function openResearch() {
+  if (_researchES) { try { _researchES.close(); } catch(_) {} _researchES = null; }
+  document.getElementById("modalTitle").textContent = "🔬 Deep Research";
+  document.getElementById("modalBody").innerHTML = `
+    <div class="research-form">
+      <label class="research-label">研究问题</label>
+      <textarea id="researchQ" class="research-input" rows="3"
+        placeholder="例如：综述近期低空经济中信道估计与波束成形的主流方法与对比"></textarea>
+
+      <div class="research-controls">
+        <label class="research-label">最大轮数 <span id="researchRoundsVal">4</span></label>
+        <input type="range" id="researchRounds" min="1" max="16" value="4"
+          oninput="document.getElementById('researchRoundsVal').textContent=this.value">
+      </div>
+
+      <div class="research-toggles">
+        <label><input type="checkbox" id="researchArxiv"> 启用 arXiv 搜索</label>
+        <label><input type="checkbox" id="researchWeb"> 启用 Web 搜索 (需 SERPER_API_KEY)</label>
+      </div>
+
+      <button class="btn btn-primary" onclick="startResearch()">开始调研</button>
+      <div class="research-hint">本地知识库始终启用。深度调研将以 ReAct 方式多轮推理，过程实时展示。</div>
+    </div>
+  `;
+  document.getElementById("modalOverlay").classList.add("active");
+}
+
+function startResearch() {
+  const q = document.getElementById("researchQ").value.trim();
+  if (!q) { alert("请先输入研究问题"); return; }
+  const rounds = document.getElementById("researchRounds").value;
+  const arxiv = document.getElementById("researchArxiv").checked ? "1" : "0";
+  const web = document.getElementById("researchWeb").checked ? "1" : "0";
+
+  document.getElementById("modalBody").innerHTML = `
+    <div class="research-header">
+      <div class="research-question"><strong>Q:</strong> ${escapeHtml(q)}</div>
+      <div class="research-status" id="researchStatus">调研中... · 最多 ${rounds} 轮</div>
+    </div>
+    <div class="research-trace" id="researchTrace"></div>
+    <div class="research-final" id="researchFinal" style="display:none;"></div>
+  `;
+
+  const url = `/api/research?q=${encodeURIComponent(q)}&rounds=${rounds}&arxiv=${arxiv}&web=${web}`;
+  const es = new EventSource(url);
+  _researchES = es;
+
+  es.onmessage = (msg) => {
+    let ev;
+    try { ev = JSON.parse(msg.data); } catch(_) { return; }
+    handleResearchEvent(ev);
+    if (ev.type === "done" || ev.type === "final" || ev.type === "error") {
+      es.close();
+      _researchES = null;
+    }
+  };
+  es.onerror = () => {
+    document.getElementById("researchStatus").textContent = "连接中断";
+    es.close();
+    _researchES = null;
+  };
+}
+
+function handleResearchEvent(ev) {
+  const trace = document.getElementById("researchTrace");
+  const status = document.getElementById("researchStatus");
+  if (!trace) return;
+
+  if (ev.type === "start") {
+    const tools = (ev.allowed_tools || []).join(", ");
+    trace.insertAdjacentHTML("beforeend",
+      `<div class="trace-meta">启用工具: ${escapeHtml(tools)}</div>`);
+  } else if (ev.type === "thought") {
+    status.textContent = `第 ${ev.round} 轮 · 思考中`;
+    trace.insertAdjacentHTML("beforeend", `
+      <div class="trace-step trace-thought">
+        <div class="trace-head">💭 Thought · Round ${ev.round}</div>
+        <div class="trace-body">${escapeHtml(ev.content || "")}</div>
+      </div>`);
+  } else if (ev.type === "action") {
+    status.textContent = `第 ${ev.round} 轮 · 调用 ${ev.tool}`;
+    trace.insertAdjacentHTML("beforeend", `
+      <div class="trace-step trace-action">
+        <div class="trace-head">🔧 Action · ${escapeHtml(ev.tool)}</div>
+        <pre class="trace-body">${escapeHtml(JSON.stringify(ev.input || {}, null, 2))}</pre>
+      </div>`);
+  } else if (ev.type === "observation") {
+    const preview = JSON.stringify(ev.result || {}, null, 2);
+    const short = preview.length > 800 ? preview.slice(0, 800) + " …" : preview;
+    trace.insertAdjacentHTML("beforeend", `
+      <div class="trace-step trace-obs">
+        <details open>
+          <summary class="trace-head">👁 Observation · ${escapeHtml(ev.tool || "")}</summary>
+          <pre class="trace-body">${escapeHtml(short)}</pre>
+        </details>
+      </div>`);
+  } else if (ev.type === "final") {
+    status.textContent = `完成 · 共 ${ev.round} 轮`;
+    const box = document.getElementById("researchFinal");
+    box.style.display = "block";
+    box.innerHTML = `<div class="research-final-title">📋 研究报告</div>
+      <div class="research-final-body">${renderMarkdown(ev.answer || "")}</div>`;
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (ev.type === "error") {
+    status.textContent = "出错";
+    trace.insertAdjacentHTML("beforeend",
+      `<div class="trace-step trace-error">❌ ${escapeHtml(ev.message || "")}</div>`);
+  }
+  trace.scrollTop = trace.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
+}
+
