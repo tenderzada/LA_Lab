@@ -5,70 +5,27 @@ let annotations = {};
 let currentFilter = { date: null, source: null, category: null, status: null, search: "" };
 
 // ── Research Categories ──
-const CATEGORIES = [
-  {
-    name: "自进化",
-    icon: "🔄",
-    keywords: ["self-evolv", "self-improv", "self-refin", "self-distill", "self-play", "自进化",
-               "continual learn", "lifelong", "self-train", "bootstrap", "自蒸馏", "持续学习"]
-  },
-  {
-    name: "智能体RL",
-    icon: "🎮",
-    keywords: ["reinforcement learn", "rl agent", "agent rl", "agentic rl", "reward model",
-               "policy optim", "ppo", "dpo", "grpo", "rlhf", "rlvr", "强化学习"]
-  },
-  {
-    name: "工具智能体",
-    icon: "🔧",
-    keywords: ["tool use", "tool-use", "tool call", "tool learn", "function call",
-               "tool agent", "api agent", "工具调用", "工具使用", "tool augment"]
-  },
-  {
-    name: "低空经济",
-    icon: "🛩️",
-    keywords: ["low-altitude", "low altitude", "uav", "drone", "aerial", "低空",
-               "lawn", "lae", "unmanned aerial"]
-  },
-  {
-    name: "Harness",
-    icon: "🏗️",
-    keywords: ["harness", "benchmark", "swe-bench", "testbed", "sandbox", "gym",
-               "evaluation framework", "eval bench"]
-  },
-  {
-    name: "Skill",
-    icon: "⚡",
-    keywords: ["skill", "skill learn", "skill discov", "skill transfer", "skill acqui",
-               "capability", "技能"]
-  },
-  {
-    name: "边缘智能",
-    icon: "📡",
-    keywords: ["edge intellig", "edge comput", "edge-cloud", "edge ai", "on-device",
-               "mobile comput", "边缘智能", "边缘计算", "端侧", "端云"]
-  },
-  {
-    name: "SWE Agent",
-    icon: "💻",
-    keywords: ["swe-agent", "swe agent", "software engineer", "code agent", "coding agent",
-               "swe-bench", "auto debug", "auto fix", "code repair"]
-  },
-  {
-    name: "RAG",
-    icon: "📚",
-    keywords: ["rag", "retrieval augment", "retrieval-augment", "graphrag", "knowledge graph",
-               "retriev", "检索增强"]
-  },
-  {
-    name: "多模态",
-    icon: "👁️",
-    keywords: ["multimodal", "multi-modal", "vision-language", "vlm", "多模态",
-               "visual question", "image understanding"]
-  }
-];
+let allTags = [];
+
+async function loadTags() {
+  try {
+    const resp = await fetch("/api/tags");
+    allTags = await resp.json();
+  } catch (e) { allTags = []; }
+}
+
+function getPaperTags(paperId) {
+  const ann = annotations[paperId];
+  if (!ann || !ann.tags) return [];
+  return ann.tags.map(name => allTags.find(t => t.name === name)).filter(Boolean);
+}
 
 function matchCategory(paper) {
+  return getPaperTags(paper.id);
+}
+
+// kept for compat — now returns annotation-based tags
+function _legacyMatchCategory(paper) {
   const haystack = [paper.title, paper.title_cn, paper.keywords, paper.summary, paper.id]
     .join(" ").toLowerCase();
   const matched = [];
@@ -94,12 +51,14 @@ document.addEventListener("DOMContentLoaded", () => {
 async function loadPapers() {
   showLoading(true);
   try {
-    const [papersRes, annotRes] = await Promise.all([
+    const [papersRes, annotRes, tagsRes] = await Promise.all([
       fetch("/api/papers"),
       fetch("/api/annotations"),
+      fetch("/api/tags"),
     ]);
     allPapers = await papersRes.json();
     annotations = await annotRes.json();
+    allTags = await tagsRes.json();
     buildSidebar();
     renderCards();
     updateStats();
@@ -251,19 +210,18 @@ function filterByStatus(status, el) {
 
 function buildCategoryFilters() {
   const container = document.getElementById("categoryFilters");
-  // Count papers per category
   const counts = {};
-  CATEGORIES.forEach(cat => { counts[cat.name] = 0; });
-  allPapers.forEach(p => {
-    matchCategory(p).forEach(cat => { counts[cat.name]++; });
+  allTags.forEach(t => { counts[t.name] = 0; });
+  Object.values(annotations).forEach(ann => {
+    (ann.tags || []).forEach(tag => { counts[tag] = (counts[tag] || 0) + 1; });
   });
 
   let html = `<button class="cat-pill active" onclick="filterByCategory(null, this)">All</button>`;
-  CATEGORIES.forEach(cat => {
-    if (counts[cat.name] > 0) {
-      html += `<button class="cat-pill" onclick="filterByCategory('${cat.name}', this)">${cat.icon} ${cat.name} (${counts[cat.name]})</button>`;
-    }
+  allTags.forEach(t => {
+    const c = counts[t.name] || 0;
+    html += `<button class="cat-pill" onclick="filterByCategory('${t.name}', this)">${t.icon} ${t.name}${c > 0 ? ` (${c})` : ""}</button>`;
   });
+  html += `<button class="cat-pill cat-pill-add" onclick="openCreateTag()">+ 标签</button>`;
   container.innerHTML = html;
 }
 
@@ -338,8 +296,9 @@ function getFilteredPapers() {
       }
     }
     if (currentFilter.category) {
-      const cats = matchCategory(p).map(c => c.name);
-      if (!cats.includes(currentFilter.category)) return false;
+      const ann = annotations[p.id];
+      const tags = (ann && ann.tags) || [];
+      if (!tags.includes(currentFilter.category)) return false;
     }
     if (currentFilter.search) {
       const q = currentFilter.search;
@@ -370,8 +329,9 @@ function renderCards() {
     const fileUrl = "file:///" + p.abs_path.replace(/\\/g, "/");
     const sourceClass = p.source.toLowerCase().includes("arxiv") ? "arxiv"
       : p.source.toLowerCase().includes("tmc") ? "tmc" : "other";
-    const cats = matchCategory(p);
-    const catTags = cats.map(c => `<span class="paper-cat-tag" onclick="filterByCategory('${c.name}', document.querySelector('.cat-pill[onclick*=\\'${c.name}\\']'))">${c.icon} ${c.name}</span>`).join("");
+    const cats = getPaperTags(p.id);
+    const catTags = cats.map(c => `<span class="paper-cat-tag" onclick="filterByCategory('${c.name}', document.querySelector('.cat-pill[onclick*=\\'${c.name}\\']'))">${c.icon} ${c.name} <span class="tag-remove" onclick="event.stopPropagation();removeTagFromPaper('${escapeAttr(p.id)}','${escapeAttr(c.name)}')">&times;</span></span>`).join("")
+      + `<span class="paper-cat-tag tag-add-btn" onclick="openTagPicker('${escapeAttr(p.id)}', event)">+</span>`;
     const ann = getAnnotation(p.id);
     const statusInfo = STATUS_LABELS[ann.status || ""];
     const starClass = ann.starred ? "starred" : "";
@@ -1210,5 +1170,108 @@ function handleResearchEvent(ev) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
+}
+
+// ── Tag Management ──
+
+const TAG_ICONS = [
+  "🏷️","🔄","🎮","🔧","🛩️","🏗️","⚡","📡","💻","📚","👁️","🧪",
+  "🧠","💡","🔬","📊","🎯","🌐","⚙️","🤖","🎲","📝","🔑","🛡️",
+  "🚀","💎","🧬","📐","🔥","🌿","🎨","📦","⛓️","🪐","✨","❄️"
+];
+
+function openCreateTag() {
+  document.getElementById("modalTitle").textContent = "新建标签";
+  let iconsHtml = TAG_ICONS.map(ic =>
+    `<span class="icon-option" onclick="selectTagIcon(this, '${ic}')">${ic}</span>`
+  ).join("");
+  document.getElementById("modalBody").innerHTML = `
+    <div class="tag-create-form">
+      <label class="research-label">标签名称</label>
+      <input type="text" id="newTagName" class="research-input" placeholder="例如：数据合成">
+      <label class="research-label">选择图标</label>
+      <div class="icon-picker">${iconsHtml}</div>
+      <input type="hidden" id="newTagIcon" value="🏷️">
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" onclick="createTag()">创建</button>
+      </div>
+    </div>
+  `;
+  document.querySelector(".icon-option").classList.add("selected");
+  document.getElementById("modalOverlay").classList.add("active");
+}
+
+function selectTagIcon(el, icon) {
+  document.querySelectorAll(".icon-option").forEach(e => e.classList.remove("selected"));
+  el.classList.add("selected");
+  document.getElementById("newTagIcon").value = icon;
+}
+
+async function createTag() {
+  const name = document.getElementById("newTagName").value.trim();
+  const icon = document.getElementById("newTagIcon").value;
+  if (!name) { alert("请输入标签名称"); return; }
+  const resp = await fetch("/api/tags", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, icon })
+  });
+  allTags = await resp.json();
+  buildCategoryFilters();
+  closeModal();
+}
+
+function openTagPicker(paperId, event) {
+  event.stopPropagation();
+  document.querySelectorAll(".tag-picker-popup").forEach(e => e.remove());
+  const existing = (annotations[paperId] && annotations[paperId].tags) || [];
+  const available = allTags.filter(t => !existing.includes(t.name));
+  if (available.length === 0) { alert("已添加全部标签"); return; }
+
+  let html = `<div class="tag-picker-popup">`;
+  available.forEach(t => {
+    html += `<div class="tag-picker-item" onclick="addTagToPaper('${escapeAttr(paperId)}','${escapeAttr(t.name)}',this)">${t.icon} ${t.name}</div>`;
+  });
+  html += `</div>`;
+
+  const btn = event.target;
+  btn.style.position = "relative";
+  btn.insertAdjacentHTML("afterend", html);
+
+  setTimeout(() => {
+    document.addEventListener("click", function _close() {
+      document.querySelectorAll(".tag-picker-popup").forEach(e => e.remove());
+      document.removeEventListener("click", _close);
+    }, { once: true });
+  }, 0);
+}
+
+async function addTagToPaper(paperId, tagName, el) {
+  const ann = annotations[paperId] || { starred: false, status: "", notes: "", tags: [] };
+  if (!ann.tags) ann.tags = [];
+  if (ann.tags.includes(tagName)) return;
+  ann.tags.push(tagName);
+  annotations[paperId] = ann;
+  await fetch(`/api/annotations/${encodeURIComponent(paperId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags: ann.tags })
+  });
+  document.querySelectorAll(".tag-picker-popup").forEach(e => e.remove());
+  renderCards();
+  buildCategoryFilters();
+}
+
+async function removeTagFromPaper(paperId, tagName) {
+  const ann = annotations[paperId];
+  if (!ann || !ann.tags) return;
+  ann.tags = ann.tags.filter(t => t !== tagName);
+  await fetch(`/api/annotations/${encodeURIComponent(paperId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags: ann.tags })
+  });
+  renderCards();
+  buildCategoryFilters();
 }
 

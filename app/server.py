@@ -23,7 +23,7 @@ from flask import Flask, render_template, jsonify, request, Response, stream_wit
 from scan import scan
 from rag import build_index, ask, get_index_info, find_similar
 import researcher
-from annotations import load_annotations, update_annotation
+from annotations import load_annotations, update_annotation, load_tags, add_tag, delete_tag
 from arxiv_import import import_arxiv
 from weekly_digest import build_digest, push_to_feishu
 
@@ -87,6 +87,32 @@ def api_annotation_update(paper_id):
     data = request.get_json() or {}
     result = update_annotation(paper_id, data)
     return jsonify(result)
+
+
+@app.route("/api/tags")
+def api_tags():
+    return jsonify(load_tags())
+
+
+@app.route("/api/tags", methods=["POST"])
+def api_tag_create():
+    data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    icon = data.get("icon", "🏷️").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    tags = add_tag(name, icon)
+    return jsonify(tags)
+
+
+@app.route("/api/tags", methods=["DELETE"])
+def api_tag_delete():
+    data = request.get_json() or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    tags = delete_tag(name)
+    return jsonify(tags)
 
 
 @app.route("/api/rag/status")

@@ -1,0 +1,46 @@
+[
+  {
+    "name": "自进化",
+    "icon": "🔄"
+  },
+  {
+    "name": "智能体RL",
+    "icon": "🎮"
+  },
+  {
+    "name": "工具智能体",
+    "icon": "🔧"
+  },
+  {
+    "name": "低空经济",
+    "icon": "🛩️"
+  },
+  {
+    "name": "Harness",
+    "icon": "🏗️"
+  },
+  {
+    "name": "Skill",
+    "icon": "⚡"
+  },
+  {
+    "name": "边缘智能",
+    "icon": "📡"
+  },
+  {
+    "name": "SWE Agent",
+    "icon": "💻"
+  },
+  {
+    "name": "RAG",
+    "icon": "📚"
+  },
+  {
+    "name": "多模态",
+    "icon": "👁️"
+  },
+  {
+    "name": "数据合成",
+    "icon": "🧪"
+  }
+]
