@@ -23,6 +23,8 @@ app/papers.json
 app/annotations.json
 app/rag_index/
 app/chroma_db/
+app/research_history.json
+app/llm_config.json
 
 # Environment
 .env

@@ -15,33 +15,12 @@ META_PATH = os.path.join(INDEX_DIR, "meta.json")
 
 EMBED_DIM = 1536  # text-embedding-3-small dimension
 
-# ── API Clients ──
-# Set via environment variables:
-#   OPENAI_API_KEY   — OpenAI or OpenRouter key (for embeddings)
-#   DASHSCOPE_API_KEY — Alibaba DashScope key (for Qwen chat model)
-OPENROUTER_KEY = os.environ.get("OPENAI_API_KEY", "")
-DASHSCOPE_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-
-if not OPENROUTER_KEY:
-    print("[rag] WARNING: OPENAI_API_KEY not set — embedding calls will fail")
-if not DASHSCOPE_KEY:
-    print("[rag] WARNING: DASHSCOPE_API_KEY not set — Qwen chat calls will fail")
-
-embed_client = OpenAI(
-    api_key=OPENROUTER_KEY or "not-set",
-    base_url=OPENAI_BASE_URL,
-)
-
-qwen_client = OpenAI(
-    api_key=DASHSCOPE_KEY or "not-set",
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-)
+from llm import get_chat_client, get_embed_client
 
 
 def get_embedding(texts: list) -> np.ndarray:
     """Get embeddings via OpenRouter. Returns numpy array (N, dim)."""
-    resp = embed_client.embeddings.create(
+    resp = get_embed_client().embeddings.create(
         model="openai/text-embedding-3-small",
         input=texts,
     )
@@ -315,8 +294,9 @@ Rules:
 
     messages.append({"role": "user", "content": user_content})
 
-    resp = qwen_client.chat.completions.create(
-        model="qwen-plus",
+    client, model = get_chat_client()
+    resp = client.chat.completions.create(
+        model=model,
         messages=messages,
         temperature=0.3,
         max_tokens=1500,

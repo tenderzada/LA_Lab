@@ -9,7 +9,8 @@ import re
 import urllib.request
 import urllib.parse
 
-from rag import retrieve, qwen_client
+from rag import retrieve
+from llm import get_chat_client
 
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -219,8 +220,9 @@ def run(question: str, max_rounds: int = 4, enable_arxiv: bool = False, enable_w
 
     for round_idx in range(1, max_rounds + 1):
         try:
-            resp = qwen_client.chat.completions.create(
-                model="qwen-plus",
+            client, model = get_chat_client()
+            resp = client.chat.completions.create(
+                model=model,
                 messages=messages,
                 temperature=0.3,
                 max_tokens=1800,
@@ -283,3 +285,48 @@ def run(question: str, max_rounds: int = 4, enable_arxiv: bool = False, enable_w
         yield {"type": "final", "round": max_rounds, "answer": step.get("final_answer", raw)}
     except Exception as e:
         yield {"type": "error", "message": f"生成最终报告失败: {e}"}
+
+
+# ────────────────────────── History ──────────────────────────
+
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "research_history.json")
+
+
+def _load_history() -> list:
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_history(history: list):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def save_research(question: str, trace: list, final_answer: str, rounds: int):
+    import time
+    history = _load_history()
+    entry = {
+        "id": f"r_{int(time.time())}",
+        "question": question,
+        "answer": final_answer,
+        "rounds": rounds,
+        "trace_count": len(trace),
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    history.insert(0, entry)
+    history = history[:50]
+    _save_history(history)
+    return entry
+
+
+def get_history() -> list:
+    return _load_history()
+
+
+def delete_history(research_id: str) -> list:
+    history = _load_history()
+    history = [h for h in history if h["id"] != research_id]
+    _save_history(history)
+    return history

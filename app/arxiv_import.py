@@ -4,18 +4,31 @@ arXiv auto-import: fetch metadata, download PDF, extract text, generate intro.md
 
 import os
 import re
+import json
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-from openai import OpenAI
+
+from llm import get_chat_client
 
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+SKILLS_FILE = os.path.join(os.path.dirname(__file__), "skills.json")
 
-DASHSCOPE_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-qwen_client = OpenAI(
-    api_key=DASHSCOPE_KEY or "not-set",
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-)
+
+def load_skills() -> list:
+    if not os.path.exists(SKILLS_FILE):
+        return []
+    with open(SKILLS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_skill(skill_id: str = None) -> dict:
+    skills = load_skills()
+    if skill_id:
+        s = next((s for s in skills if s["id"] == skill_id), None)
+        if s:
+            return s
+    return next((s for s in skills if s.get("is_default")), skills[0] if skills else None)
 
 
 def parse_arxiv_id(text: str) -> str:
@@ -89,46 +102,24 @@ def extract_pdf_text(pdf_path: str, max_pages: int = 6) -> str:
     return text
 
 
-def generate_intro(metadata: dict, pdf_text: str) -> str:
-    """Use Qwen to generate three-section intro.md."""
-    # Truncate PDF text if too long
+def generate_intro(metadata: dict, pdf_text: str, skill_id: str = None) -> str:
+    """Use LLM to generate intro.md using the selected skill's prompt template."""
     pdf_excerpt = pdf_text[:8000] if len(pdf_text) > 8000 else pdf_text
 
-    prompt = f"""请根据以下论文信息，生成一份严格符合格式要求的中文三段式论文介绍。
+    skill = get_skill(skill_id)
+    if skill and skill.get("prompt"):
+        prompt = skill["prompt"].format(
+            title=metadata["title"],
+            arxiv_id=metadata["id"],
+            abstract=metadata["abstract"],
+            pdf_text=pdf_excerpt,
+        )
+    else:
+        prompt = f"Summarize this paper:\nTitle: {metadata['title']}\nAbstract: {metadata['abstract']}\n\n{pdf_excerpt}"
 
-论文标题: {metadata['title']}
-arXiv ID: {metadata['id']}
-摘要: {metadata['abstract']}
-
-论文正文节选:
-{pdf_excerpt}
-
-请严格按以下格式输出（字数控制在700字以内）：
-
-**关键词**: [关键词1], [关键词2], [关键词3]
-
-📚arXiv: {metadata['id']}
-✏️标题: {metadata['title']}
-🏷️中文标题：[≤20字的中文标题]
-📄一句话介绍：[20-30字的核心概括]
-
-🎯动机
-[介绍研究背景、发展脉络、研究空白，200字左右]
-
-💡方法与创新
-[聚焦核心创新点，用"一是…二是…"组织，250字左右]
-
-📊实验设计
-[主要基准、关键结果、消融结论，200字左右]
-
-注意：
-- 语言学术规范，避免口语化
-- 动机部分梳理脉络而非罗列问题
-- 方法部分聚焦创新点
-- 实验部分数据驱动"""
-
-    resp = qwen_client.chat.completions.create(
-        model="qwen-plus",
+    client, model = get_chat_client()
+    resp = client.chat.completions.create(
+        model=model,
         messages=[
             {"role": "system", "content": "You are an academic paper summarizer. Output strictly follows the requested format."},
             {"role": "user", "content": prompt},
@@ -147,7 +138,7 @@ def sanitize_filename(title: str) -> str:
     return s[:50]
 
 
-def import_arxiv(arxiv_input: str) -> dict:
+def import_arxiv(arxiv_input: str, skill_id: str = None) -> dict:
     """End-to-end: parse input, fetch metadata, download PDF, generate intro, save."""
     arxiv_id = parse_arxiv_id(arxiv_input)
 
@@ -170,8 +161,8 @@ def import_arxiv(arxiv_input: str) -> dict:
     # Extract text
     pdf_text = extract_pdf_text(pdf_path)
 
-    # Generate intro
-    intro_content = generate_intro(metadata, pdf_text)
+    # Generate intro using selected skill
+    intro_content = generate_intro(metadata, pdf_text, skill_id=skill_id)
 
     # Save intro.md
     intro_path = os.path.join(save_dir, "intro.md")

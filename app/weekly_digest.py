@@ -7,17 +7,11 @@ import os
 import json
 import time
 import urllib.request
-from openai import OpenAI
+
+from llm import get_chat_client
 
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-
-DASHSCOPE_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")  # Optional, set via env
-
-qwen_client = OpenAI(
-    api_key=DASHSCOPE_KEY or "not-set",
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-)
+FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 
 
 def find_recent_papers(days: int = 7) -> list:
@@ -85,8 +79,9 @@ def generate_digest(papers: list) -> str:
 4. 在结尾点出2-3篇最值得关注的论文，并简述原因
 5. 语言专业简洁，避免口语化"""
 
-    resp = qwen_client.chat.completions.create(
-        model="qwen-plus",
+    client, model = get_chat_client()
+    resp = client.chat.completions.create(
+        model=model,
         messages=[
             {"role": "system", "content": "你是一位专业的研究助手，擅长撰写学术研究简报。"},
             {"role": "user", "content": prompt},

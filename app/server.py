@@ -24,8 +24,9 @@ from scan import scan
 from rag import build_index, ask, get_index_info, find_similar
 import researcher
 from annotations import load_annotations, update_annotation, load_tags, add_tag, delete_tag
-from arxiv_import import import_arxiv
+from arxiv_import import import_arxiv, load_skills
 from weekly_digest import build_digest, push_to_feishu
+from llm import get_llm_status, set_active as llm_set_active, get_providers as llm_get_providers
 
 app = Flask(__name__)
 BASE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -177,13 +178,47 @@ def api_import_arxiv():
     if not arxiv_input:
         return jsonify({"success": False, "error": "No input provided"}), 400
 
+    skill_id = data.get("skill_id", None)
     try:
-        result = import_arxiv(arxiv_input)
+        result = import_arxiv(arxiv_input, skill_id=skill_id)
         if result.get("success"):
             scan()  # Refresh papers.json
         return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@app.route("/api/skills")
+def api_skills():
+    return jsonify(load_skills())
+
+
+@app.route("/api/llm/status")
+def api_llm_status():
+    return jsonify(get_llm_status())
+
+
+@app.route("/api/llm/switch", methods=["POST"])
+def api_llm_switch():
+    data = request.get_json() or {}
+    provider_id = data.get("provider_id", "")
+    try:
+        llm_set_active(provider_id)
+        return jsonify(get_llm_status())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/research/history")
+def api_research_history():
+    return jsonify(researcher.get_history())
+
+
+@app.route("/api/research/history", methods=["DELETE"])
+def api_research_history_delete():
+    data = request.get_json() or {}
+    rid = data.get("id", "")
+    return jsonify(researcher.delete_history(rid))
 
 
 @app.route("/api/rag/similar")
@@ -226,6 +261,9 @@ def api_research():
     enable_web = request.args.get("web", "0") == "1"
 
     def gen():
+        trace = []
+        final_answer = ""
+        final_round = 0
         try:
             for ev in researcher.run(
                 question,
@@ -233,10 +271,16 @@ def api_research():
                 enable_arxiv=enable_arxiv,
                 enable_web=enable_web,
             ):
+                trace.append(ev)
+                if ev.get("type") == "final":
+                    final_answer = ev.get("answer", "")
+                    final_round = ev.get("round", max_rounds)
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
         except Exception as e:
             err = {"type": "error", "message": f"{e}", "trace": traceback.format_exc()}
             yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+        if final_answer:
+            researcher.save_research(question, trace, final_answer, final_round)
         yield "data: {\"type\": \"done\"}\n\n"
 
     return Response(

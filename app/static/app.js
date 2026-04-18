@@ -62,6 +62,8 @@ async function loadPapers() {
     buildSidebar();
     renderCards();
     updateStats();
+    loadLLMSelector();
+    loadResearchHistory();
   } catch (e) {
     console.error("Failed to load papers:", e);
   }
@@ -785,10 +787,16 @@ async function pushDigestToFeishu() {
 }
 
 // ── arXiv Import ──
-function openArxivImport() {
+async function openArxivImport() {
   const overlay = document.getElementById("modalOverlay");
   const modalTitle = document.getElementById("modalTitle");
   const modalBody = document.getElementById("modalBody");
+
+  let skills = [];
+  try { skills = await (await fetch("/api/skills")).json(); } catch(e) {}
+  const skillOptions = skills.map(s =>
+    `<option value="${s.id}" ${s.is_default ? "selected" : ""}>${s.icon} ${s.name} — ${s.description}</option>`
+  ).join("");
 
   modalTitle.textContent = "Import from arXiv";
   modalBody.innerHTML = `
@@ -799,6 +807,10 @@ function openArxivImport() {
       <input type="text" id="arxivInput" placeholder="2604.04949 or https://arxiv.org/abs/..."
         style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-sans);outline:none;margin-bottom:12px"
         onkeydown="if(event.key==='Enter')importArxiv()" />
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Skill (生成模板)</label>
+      <select id="arxivSkill" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:12px;background:var(--bg-page)">
+        ${skillOptions}
+      </select>
       <button class="btn-accent" onclick="importArxiv()"
         style="padding:10px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer">
         Import
@@ -816,13 +828,14 @@ async function importArxiv() {
   const value = input.value.trim();
   if (!value) return;
 
+  const skillId = document.getElementById("arxivSkill")?.value || "";
   status.innerHTML = `<div style="color:var(--text-secondary)">◌ Fetching metadata, downloading PDF, generating summary... (30-60s)</div>`;
 
   try {
     const res = await fetch("/api/import_arxiv", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: value }),
+      body: JSON.stringify({ input: value, skill_id: skillId }),
     });
     const data = await res.json();
 
@@ -1110,6 +1123,7 @@ function startResearch() {
     if (ev.type === "done" || ev.type === "final" || ev.type === "error") {
       es.close();
       _researchES = null;
+      if (ev.type === "done") loadResearchHistory();
     }
   };
   es.onerror = () => {
@@ -1165,6 +1179,79 @@ function handleResearchEvent(ev) {
       `<div class="trace-step trace-error">❌ ${escapeHtml(ev.message || "")}</div>`);
   }
   trace.scrollTop = trace.scrollHeight;
+}
+
+// ── LLM Selector ──
+async function loadLLMSelector() {
+  const el = document.getElementById("llmSelector");
+  if (!el) return;
+  try {
+    const status = await (await fetch("/api/llm/status")).json();
+    let html = `<select class="llm-select" onchange="switchLLM(this.value)">`;
+    status.providers.forEach(p => {
+      html += `<option value="${p.id}" ${p.id === status.active ? "selected" : ""}>${p.name}</option>`;
+    });
+    html += `</select>`;
+    html += `<div class="llm-model-name">${escapeHtml(status.model)}</div>`;
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">LLM unavailable</span>'; }
+}
+
+async function switchLLM(providerId) {
+  await fetch("/api/llm/switch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: providerId })
+  });
+  loadLLMSelector();
+}
+
+// ── Research History ──
+async function loadResearchHistory() {
+  const el = document.getElementById("researchHistory");
+  const count = document.getElementById("researchHistoryCount");
+  if (!el) return;
+  try {
+    const history = await (await fetch("/api/research/history")).json();
+    count.textContent = history.length > 0 ? history.length : "";
+    if (history.length === 0) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 12px;">暂无调研记录</div>';
+      return;
+    }
+    el.innerHTML = history.map(h => `
+      <div class="history-item" onclick="showHistoryReport('${escapeAttr(h.id)}', ${JSON.stringify(h.question).replace(/'/g,"&#39;")}, ${JSON.stringify(h.answer).replace(/'/g,"&#39;")})">
+        <div class="history-q">${escapeHtml(h.question.slice(0, 40))}${h.question.length > 40 ? "..." : ""}</div>
+        <div class="history-meta">${h.timestamp} · ${h.rounds} 轮</div>
+      </div>
+    `).join("");
+  } catch(e) { el.innerHTML = ''; }
+}
+
+function showHistoryReport(id, question, answer) {
+  document.getElementById("modalTitle").textContent = "📋 调研报告";
+  document.getElementById("modalBody").innerHTML = `
+    <div class="research-header">
+      <div class="research-question"><strong>Q:</strong> ${escapeHtml(question)}</div>
+    </div>
+    <div class="research-final" style="display:block;">
+      <div class="research-final-body">${renderMarkdown(answer)}</div>
+    </div>
+    <div style="margin-top:12px;text-align:right;">
+      <button class="btn" onclick="deleteResearch('${escapeAttr(id)}')" style="color:var(--accent);font-size:12px;">删除此记录</button>
+    </div>
+  `;
+  document.getElementById("modalOverlay").classList.add("active");
+}
+
+async function deleteResearch(id) {
+  if (!confirm("确定删除此调研记录？")) return;
+  await fetch("/api/research/history", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id })
+  });
+  closeModal();
+  loadResearchHistory();
 }
 
 function escapeHtml(s) {
@@ -1228,15 +1315,13 @@ function openTagPicker(paperId, event) {
   const available = allTags.filter(t => !existing.includes(t.name));
   if (available.length === 0) { alert("已添加全部标签"); return; }
 
-  let html = `<div class="tag-picker-popup">`;
+  let html = `<div class="tag-picker-popup" style="left:${event.clientX}px;top:${event.clientY}px;">`;
   available.forEach(t => {
-    html += `<div class="tag-picker-item" onclick="addTagToPaper('${escapeAttr(paperId)}','${escapeAttr(t.name)}',this)">${t.icon} ${t.name}</div>`;
+    html += `<div class="tag-picker-item" onclick="event.stopPropagation();addTagToPaper('${escapeAttr(paperId)}','${escapeAttr(t.name)}',this)">${t.icon} ${t.name}</div>`;
   });
   html += `</div>`;
 
-  const btn = event.target;
-  btn.style.position = "relative";
-  btn.insertAdjacentHTML("afterend", html);
+  document.body.insertAdjacentHTML("beforeend", html);
 
   setTimeout(() => {
     document.addEventListener("click", function _close() {
